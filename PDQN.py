@@ -24,7 +24,8 @@ class Actor(nn.Module):
                  hidden_layers=(128,), activation=nn.ReLU,
                  l2=0., lr=1e-3,
                  verbose=None, dropout=None, random_state=1,
-                 device="CPU"):
+                 device="CPU",
+                 output_layer_init_std=1e-3):
         '''
 
         :param layers: list of integers representing sizes of hidden layers.
@@ -71,7 +72,9 @@ class Actor(nn.Module):
 
         # Build output layer
         sequentials.append(self.activation().to(device))
-        sequentials.append(nn.Linear(self.hidden_layers[-1], action_size))
+        out_layer = nn.Linear(self.hidden_layers[-1], action_size)
+        torch.nn.init.normal_(out_layer, std=output_layer_init_std)
+        sequentials.append(out_layer)
         self.stack = nn.Sequential(*sequentials).to(device)
         self.device = device
 
@@ -83,7 +86,7 @@ class Actor(nn.Module):
         logits = self.stack(X)
         return logits
 
-    def fit_batch(self, X, y):
+    def fit_batch(self, X, y, clipping=None):
 
         X, y = X.to(self.device), y.to(self.device)  # Send to GPU
         self.optimizer.zero_grad()
@@ -91,6 +94,9 @@ class Actor(nn.Module):
 
         tloss = self.criterion(logits, y)
         tloss.backward()
+        if clipping:
+            torch.nn.utils.clip_grad_norm_(self.parameters(), clipping)
+
         self.optimizer.step()
 
 
@@ -99,7 +105,8 @@ class ParamNet(nn.Module):
                  hidden_layers=(128,), activation=nn.ReLU,
                  l2=0., lr=1e-4,
                  verbose=None, dropout=None, random_state=1,
-                 device="CPU"):
+                 device="CPU",
+                 output_layer_init_std=1e-3):
 
         super(ParamNet, self).__init__()
 
@@ -124,14 +131,18 @@ class ParamNet(nn.Module):
         # Build hidden layers
         for i in range(len(self.hidden_layers) - 1):
             sequentials.append(self.activation().to(device))
-            if self.dropout is not None: sequentials.append(nn.Dropout(self.dropout[i]))
 
-            sequentials.append(nn.Linear(self.hidden_layers[i],
-                                         self.hidden_layers[i + 1]).to(device))
+            if self.dropout is not None: sequentials.append(nn.Dropout(self.dropout[i]))
+            layer = nn.Linear(self.hidden_layers[i], self.hidden_layers[i + 1]).to(device)
+            torch.nn.init.kaiming_normal_(layer.weight, nonlinearity=activation)
+            torch.nn.init.zeros_(layer.bias)
+            sequentials.append(layer)
 
         # Build output layer
         sequentials.append(self.activation().to(device))
-        sequentials.append(nn.Linear(self.hidden_layers[-1], action_param_size))
+        out_layer = nn.Linear(self.hidden_layers[-1], action_param_size)
+        torch.nn.init.normal_(out_layer, std=output_layer_init_std)
+        sequentials.append(out_layer)
         self.stack = nn.Sequential(*sequentials).to(device)
         self.device = device
 
@@ -143,7 +154,7 @@ class ParamNet(nn.Module):
         logits = self.stack(X)
         return logits
 
-    def fit_batch(self, states, action_params):
+    def fit_batch(self, states, action_params, clipping=None):
         from copy import deepcopy
 
         delta_a = deepcopy(action_params.grad.data)
@@ -152,6 +163,8 @@ class ParamNet(nn.Module):
         out = -torch.mul(delta_a, action_params)
         self.zero_grad()
         out.backward(torch.ones(out.shape).to(self.device))
+        if clipping:
+            torch.nn.utils.clip_grad_norm_(self.parameters(), clipping)
         self.optimizer.step()
         return
 
@@ -169,6 +182,7 @@ class Agent:
                  batch_size=128,
                  train_start=500,
                  action_param_lims=None,
+                 grad_clipping=10.,
                  device="cuda" if torch.cuda.is_available() else "cpu"):
 
         self.state_size = state_size
@@ -184,6 +198,7 @@ class Agent:
         self.batch_size = batch_size
         self.train_start = train_start
         self.device = device
+        self.clipping = grad_clipping
         if not action_param_lims:
             self.action_param_lims = np.array([(-1, 1) for i in range(action_size)])  # default
 
@@ -264,7 +279,7 @@ class Agent:
             for (i, j) in indices:
                 target[i, j] = target_flat[i]
 
-        self.actorNet.fit_batch(actor_inputs, target)
+        self.actorNet.fit_batch(actor_inputs, target, clipping=self.clipping)
 
         with torch.no_grad():
             action_params = self.paramNet(states)
@@ -287,6 +302,8 @@ class Agent:
         out = -torch.mul(delta_a, action_params)
         self.paramNet.zero_grad()
         out.backward(torch.ones(out.shape).to(self.device))
+        if self.clipping:
+            torch.nn.utils.clip_grad_norm_(self.paramNet.parameters(), self.clipping)
         self.paramNet.optimizer.step()
 
         #tau = 0.1
@@ -331,6 +348,7 @@ def train(env, agent, episodes=10, render=True):
             #reward = reward*100 # scale it up to something reasonable
 
             agent.remember(state, action, all_action_params, reward, next_state, done)
+            agent.replay()
 
             state = next_state
             score += reward
@@ -338,11 +356,9 @@ def train(env, agent, episodes=10, render=True):
                 env.render()
 
             if done:
-                score = score - 1e-1
+                score = score #- 1e-2
                 scores.append(score)
 
-            if replay_counter%10==0:
-                agent.replay()
 
             replay_counter += 1
 
@@ -375,8 +391,8 @@ if __name__ == '__main__':
         [action_space.spaces[1].spaces[i].shape[0] for i in range(action_size)])
     action_param_size = int(action_param_sizes.sum())
 
-    actorNet_kwargs = {'hidden_layers': (256, 128, 256), 'l2': 1e-6, 'lr': 1e-4}
-    paramNet_kwargs = {'hidden_layers': (256, 128, 256), 'l2': 1e-6, 'lr': 1e-5}
+    actorNet_kwargs = {'hidden_layers': (128, ), 'l2': 1e-6, 'lr': 1e-3}
+    paramNet_kwargs = {'hidden_layers': (128, ), 'l2': 1e-6, 'lr': 1e-5}
 
     agent = Agent(state_size=state_size,
                   action_size=action_size,
@@ -384,14 +400,15 @@ if __name__ == '__main__':
                   actorNet_kwargs=actorNet_kwargs,
                   paramNet_kwargs=paramNet_kwargs,
                   train_start=500,
-                  epsilon_decay=0.9995,
+                  epsilon_decay=0.9999,
                   epsilon_min=0.01,
                   epsilon_bumps=[],
-                  memory_size=20000,
+                  memory_size=10000,
                   batch_size=128,
-                  gamma=0.9)
+                  gamma=0.9,
+                  grad_clipping=0.1)
 
-    scores = train(env, agent, episodes=150000, render=True)
+    scores = train(env, agent, episodes=50000, render=True)
 
     #plt.plot(scores)
     #plt.show()
