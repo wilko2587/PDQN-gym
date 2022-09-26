@@ -66,14 +66,16 @@ class Actor(nn.Module):
         for i in range(len(self.hidden_layers) - 1):
             sequentials.append(self.activation().to(device))
             if self.dropout is not None: sequentials.append(nn.Dropout(self.dropout[i]))
+            layer = nn.Linear(self.hidden_layers[i],
+                                         self.hidden_layers[i + 1]).to(device)
+            torch.nn.init.kaiming_normal_(layer.weight, nonlinearity=activation)
+            sequentials.append(layer)
 
-            sequentials.append(nn.Linear(self.hidden_layers[i],
-                                         self.hidden_layers[i + 1]).to(device))
 
         # Build output layer
         sequentials.append(self.activation().to(device))
         out_layer = nn.Linear(self.hidden_layers[-1], action_size)
-        torch.nn.init.normal_(out_layer, std=output_layer_init_std)
+        torch.nn.init.normal_(out_layer.weight, std=output_layer_init_std)
         sequentials.append(out_layer)
         self.stack = nn.Sequential(*sequentials).to(device)
         self.device = device
@@ -141,7 +143,7 @@ class ParamNet(nn.Module):
         # Build output layer
         sequentials.append(self.activation().to(device))
         out_layer = nn.Linear(self.hidden_layers[-1], action_param_size)
-        torch.nn.init.normal_(out_layer, std=output_layer_init_std)
+        torch.nn.init.normal_(out_layer.weight, std=output_layer_init_std)
         sequentials.append(out_layer)
         self.stack = nn.Sequential(*sequentials).to(device)
         self.device = device
@@ -391,8 +393,8 @@ if __name__ == '__main__':
         [action_space.spaces[1].spaces[i].shape[0] for i in range(action_size)])
     action_param_size = int(action_param_sizes.sum())
 
-    actorNet_kwargs = {'hidden_layers': (128, ), 'l2': 1e-6, 'lr': 1e-3}
-    paramNet_kwargs = {'hidden_layers': (128, ), 'l2': 1e-6, 'lr': 1e-5}
+    actorNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-3}
+    paramNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-4}
 
     agent = Agent(state_size=state_size,
                   action_size=action_size,
