@@ -277,7 +277,7 @@ class Agent:
 
         delta_a = deepcopy(action_params.grad.data)
         action_params = self.paramNet(states)
-        # shift gradients in paramNet
+        # shift gradients in paramNet so parameters are bound by limits
         max_params = torch.from_numpy(self.action_param_lims[:, 1])
         min_params = torch.from_numpy(self.action_param_lims[:, 0])
         geq = (delta_a > 0)
@@ -393,5 +393,10 @@ if __name__ == '__main__':
 
     scores = train(env, agent, episodes=150000, render=True)
 
-    plt.plot(scores)
+    #plt.plot(scores)
+    #plt.show()
+    scores_binned = pd.DataFrame(index=np.linspace(100, len(scores), 500), columns='score', data=scores)
+    scores_binned = scores_binned.reset_index()
+    scores_binned.rename(columns={'index':'episode'})
+    sns.pointplot(data=scores_binned, y='score', x='episode', errwidth=0.5, linewidth=0.5)
     plt.show()
