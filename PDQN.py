@@ -430,7 +430,7 @@ if __name__ == '__main__':
 
     actorNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-3}
     paramNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-4}
-    Nepisodes = 30000
+    Nepisodes = 300
     results = pd.DataFrame(index=list(range(Nepisodes)), columns=['stratified memory', 'unstratified memory'])
     for stratify in [False, True]:
         agent = Agent(state_size=state_size,
