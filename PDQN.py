@@ -434,7 +434,7 @@ if __name__ == '__main__':
                   actorNet_kwargs=actorNet_kwargs,
                   paramNet_kwargs=paramNet_kwargs,
                   train_start=500,
-                  epsilon_decay=0.999,
+                  epsilon_decay=0.9995,
                   epsilon_min=0.01,
                   epsilon_bumps=[],
                   memory_size=10000,
@@ -451,4 +451,5 @@ if __name__ == '__main__':
     scores_binned = scores_binned.reset_index()
     scores_binned.rename(columns={'index':'episode'})
     sns.pointplot(data=scores_binned, y='score', x='episode', errwidth=0.5, linewidth=0.5)
-    plt.show()
+    plt.savefig('result.png')
+    pd.Series(scores).to_csv('results.csv')
