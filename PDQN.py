@@ -5,33 +5,45 @@ import numpy as np
 from collections import deque
 import random
 from datetime import datetime
-import gym
-import gym_platform
-import matplotlib.pyplot as plt
 from copy import deepcopy
 import pandas as pd
-import seaborn as sns
 import os
 
-def stratify_sample(tab, size=1, strat_cols=(0)):
+''' # relevant papers
+https://arxiv.org/abs/1905.04388
+https://arxiv.org/abs/1810.06394
+https://arxiv.org/abs/1509.01644
+'''
 
-    # 1) get frequencies of items in the strat columns
+def stratify_sample(tab, size=1, strat_cols=(0)):
+    '''
+
+    This function takes a list/iterable (tab), and returns a random
+    sample from its components, of length "size". Samples will be
+    selected with a probability inversely proportional to their
+    population in tab, according to the values in column index
+    "strat_cols".
+
+    @param tab: iterable object containing values
+    @param size: Int. desired size of output sample
+    @param strat_cols: tuple of ints. Indices of columns with tab
+        to stratify the sample using.
+    @return: list. stratified sample
+    '''
+
+    # join columns indicated in strat_cols and convert to single string
     all = []
     for col in strat_cols:
         strat_data = pd.DataFrame([s[col] for s in tab])
-        # need to round continuous numbers to reduce sparsity
+        # need to round continuous numbers to reduce sparsity - this can be tweaked
         strat_data = strat_data.round(decimals=3)
         strat_data = strat_data.astype('str')
         all = all + [strat_data.loc[:, i] for i in range(strat_data.shape[1])]
+    strat_data = pd.concat(all, axis=1)
+    strat_data['comp'] = strat_data.apply(lambda x: ' | '.join(x), axis=1)
+    strat_data = strat_data.loc[:, ['comp']]
 
-    if len(all) > 1:
-        strat_data = pd.concat(all, axis=1)
-        strat_data['comp'] = strat_data.apply(lambda x: ' | '.join(x), axis=1)
-        strat_data = strat_data.loc[:, ['comp']]
-    else:
-        strat_data = all[0]
-        strat_data.columns = ['comp']
-
+    # count populations, and generate sampling probabilities
     counts = strat_data['comp'].value_counts(normalize=False).reindex(strat_data['comp'])
     probs_to_sample = (1./counts) / (1./counts).sum()
     indices = np.random.choice(len(tab), size=size, p=probs_to_sample.to_list())
@@ -39,7 +51,13 @@ def stratify_sample(tab, size=1, strat_cols=(0)):
 
 
 def pad_action(act, act_param):
-    '''TODO: creds to cycraig'''
+    '''
+
+
+    @param act:
+    @param act_param:
+    @return:
+    '''
     N = len(act_param)
     params = [np.zeros((N,), dtype=np.float32), np.zeros((N,), dtype=np.float32), np.zeros((N,), dtype=np.float32)]
     params[act][:] = act_param
@@ -198,8 +216,8 @@ class ParamNet(nn.Module):
         return
 
 
-class Agent:
-    def __init__(self, state_size, action_size, action_param_size,
+class PDQNAgent:
+    def __init__(self, observation_space, action_space,
                  actorNet_kwargs={},
                  paramNet_kwargs={},
                  memory_size=10000,
@@ -213,11 +231,18 @@ class Agent:
                  action_param_lims=None,
                  grad_clipping=10.,
                  stratify_replay_memory=True,
+                 actor_softness=0.1,
+                 param_softness=0.01,
                  device="cuda" if torch.cuda.is_available() else "cpu"):
 
-        self.state_size = state_size
-        self.action_size = action_size
-        self.action_param_size = action_param_size
+        self.state_size = observation_space.spaces[0].shape[0]
+        self.action_size = action_space.spaces[0].n
+        action_param_sizes = np.array(
+            [action_space.spaces[1].spaces[i].shape[0] for i in range(self.action_size)])
+        self.action_param_size = int(action_param_sizes.sum())
+
+        self.actor_softness = actor_softness
+        self.param_softness = param_softness
         self.memory = deque(maxlen=memory_size)
         self.gamma = gamma  # discount rate
         self.epsilon = epsilon_start  # exploration rate
@@ -231,29 +256,39 @@ class Agent:
         self.clipping = grad_clipping
         self.stratify_replay_memory = stratify_replay_memory
         if not action_param_lims:
-            self.action_param_lims = np.array([(-1, 1) for i in range(action_size)])  # default
+            self.action_param_lims = np.array([(-1, 1) for i in range(self.action_size)])  # default
 
         # format the network params
         actorNet_kwargs['device'] = device  # ensure everything is on same device
-        actorNet_kwargs['action_size'] = action_size
-        actorNet_kwargs['action_param_size'] = action_param_size
-        actorNet_kwargs['state_size'] = state_size
+        actorNet_kwargs['action_size'] = self.action_size
+        actorNet_kwargs['action_param_size'] = self.action_param_size
+        actorNet_kwargs['state_size'] = self.state_size
         paramNet_kwargs['device'] = device
-        paramNet_kwargs['action_param_size'] = action_param_size
-        paramNet_kwargs['state_size'] = state_size
+        paramNet_kwargs['action_param_size'] = self.action_param_size
+        paramNet_kwargs['state_size'] = self.state_size
 
         # build networks
         self.actorNet = Actor(**actorNet_kwargs).double()
         self.paramNet = ParamNet(**paramNet_kwargs).double()
 
-        # create duplicates of the models
+        # create duplicates of the models (target models)
         self.actor_dupe = deepcopy(self.actorNet)
         self.param_dupe = deepcopy(self.paramNet)
 
     def remember(self, state, action, action_param, reward, next_state, done):
+        '''
+
+        Appends state/action/action_param etc as an item in the agents recall memory
+        '''
         self.memory.append((state, action, action_param, reward, next_state, done))
 
     def act(self, state):
+        '''
+
+        @param state: state vector
+        @return: action index, action_param value corresponding to action, full action_params from
+        paramNet.
+        '''
         if random.uniform(0, 1) < self.epsilon:  # implement epsilon exploration
             action = np.random.randint(0, self.action_size)
             action_params = torch.from_numpy(
@@ -270,6 +305,11 @@ class Agent:
         return action, [ap], action_params.detach().cpu()
 
     def replay(self):
+        '''
+
+        Draws a sample from recall memory, and trains the agent by one iteration.
+        '''
+
         if len(self.memory) < self.train_start:
             return
 
@@ -285,7 +325,7 @@ class Agent:
         if self.stratify_replay_memory:
             minibatch = stratify_sample(self.memory,
                                         size=self.batch_size,
-                                        strat_cols=(0, 1))
+                                        strat_cols=(0, 1)) # stratify by cols 0 (state) and 1 (action)
         else:
             minibatch = random.sample(self.memory, min(len(self.memory), self.batch_size))
 
@@ -299,7 +339,6 @@ class Agent:
         action_params = torch.concat([s[2].reshape(-1, self.action_size) for s in minibatch], dim=0).to(self.device)
 
         with torch.no_grad():
-            #action_params = self.paramNet(states)
             next_action_param = self.param_dupe(next_states).detach()
             next_actor_inputs = torch.cat((next_states, next_action_param), dim=1)
 
@@ -317,12 +356,13 @@ class Agent:
 
         self.actorNet.fit_batch(actor_inputs, target, clipping=self.clipping)
 
+        # Secondly, train the paramNet
         with torch.no_grad():
             action_params = self.paramNet(states)
         action_params.requires_grad = True
         actor_inputs = torch.cat((states, action_params), dim=1)
         Qs = self.actorNet(actor_inputs)
-        Q_loss = torch.mean(torch.sum(Qs, 1))
+        Q_loss = torch.mean(torch.sum(Qs, 1)) # Goal is to maximise Q
         self.actorNet.zero_grad()
         Q_loss.backward()
 
@@ -343,74 +383,92 @@ class Agent:
         self.paramNet.optimizer.step()
 
         # implement soft update for training stability
-        tau_actor = 0.1
-        tau_param = 0.001
         for dupe_param, param in zip(self.actor_dupe.parameters(), self.actorNet.parameters()):
-            dupe_param.data.copy_(tau_actor * param.data + (1.0 - tau_actor) * dupe_param.data)
+            dupe_param.data.copy_(self.actor_softness* param.data + (1.0 - self.actor_softness) * dupe_param.data)
         for dupe_param, param in zip(self.param_dupe.parameters(), self.paramNet.parameters()):
-            dupe_param.data.copy_(tau_param * param.data + (1.0 - tau_param) * dupe_param.data)
+            dupe_param.data.copy_(self.param_softness * param.data + (1.0 - self.param_softness) * dupe_param.data)
+
+    def save(self, path='./models', id=''):
+        '''
+
+        @param path: path to save to
+        @param id: string/int. ID to save models with
+        '''
+        torch.save(self.actorNet.state_dict(), os.path.join(path, 'actorNet_id{}.pt'.format(id)))
+        torch.save(self.paramNet.state_dict(), os.path.join(path, 'paramNet_id{}.pt'.format(id)))
+
+    def load(self, path='./models', id=''):
+        '''
+
+        @param path: path to load models from
+        @param id: id of model
+        '''
+
+        # load the models
+        actorNet = os.path.join(path, 'actorNet_id{}.pt'.format(id))
+        paramNet = os.path.join(path, 'paramNet_id{}.pt'.format(id))
+        self.actorNet.load_state_dict(torch.load(actorNet))
+        self.paramNet.load_state_dict(torch.load(paramNet))
+
+        # create duplicates of the models (target networks)
+        self.actor_dupe = deepcopy(self.actorNet)
+        self.param_dupe = deepcopy(self.paramNet)
 
 
-    def save(self, path='.', i=''):
-        torch.save(self.actorNet.state_dict(), os.path.join(path, 'actorNet{}.pt'.format(i)))
-        torch.save(self.paramNet.state_dict(), os.path.join(path, 'paramNet{}.pt'.format(i)))
+def play(env, agent, episodes=1000, render=True,
+                seed=1, train=True):
+    """
 
-def train_agent(env, agent, episodes=10, render=True):
-    env.seed(1)
-    np.random.seed(1)
+    @param env: gym environment for agent to use
+    @param agent: RL agent (suited for env)
+    @param episodes: int. number of episodes to train for
+    @param render: bool. True will render pygame window every 100 episodes.
+    @param seed: int. seed for all the non-deterministic modules.
+    @param train: bool. If true, agent will train as it plays
+    @return: list. final scores (sum of rewards) received by bot. One element per episode.
+    """
 
-    scores = []
-    replay_counter = 0
+    # seed
+    random.seed(seed)
+    env.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    episode_scores = []
     for e in range(episodes):
         state, _ = env.reset()
-        # print('state: {}'.format(state))
         done = False
-        score = 0
-        i = 0
-        actions = []
+        tot_reward = 0
         while not done:
-            i+=1
 
             action, action_param, all_action_params = agent.act(state)
-            action_full = pad_action(action, action_param)
-            # print('    action: {}'.format(action_full))
-            actions.append(action_full)
-            (next_state, _), reward, done, _ = env.step(action_full)
 
-    #        if i == 1 and e % 100 == 0 or done and e % 100 == 0:
-    #            _state = torch.from_numpy(state).to(agent.device)
-    #            _action_params = agent.paramNet(_state)
-    #            concat_state = torch.cat((_state, _action_params), dim=0)
-    #            Q = agent.actorNet(concat_state)
-    #            print('Q {}: '.format(done), Q.detach().cpu().numpy())
+            formatted_params = [np.zeros((agent.action_param_size,), dtype=np.float32)]*agent.action_size
+            formatted_params[action][:] = action_param
 
-            #if done:
-            #    reward = reward - 1e-2 # make it bad to die
+            (next_state, _), reward, done, _ = env.step((action, formatted_params))
+
+            #if done: # make it bad to die
+            #    reward = reward - 1e-2
             #reward = reward*100 # scale it up to something reasonable
 
-            agent.remember(state, action, all_action_params, reward, next_state, done)
-            agent.replay()
+            if train:
+                agent.remember(state, action, all_action_params, reward, next_state, done)
+                agent.replay()
 
             state = next_state
-            score += reward
-            if e % 100 == 0 and render:
+            tot_reward += reward
+            if (e % 100 == 0 and render) or ~train:
                 env.render()
 
             if done:
-                score = score #- 1e-2
-                scores.append(score)
-
-            replay_counter += 1
+                episode_scores.append(tot_reward)
 
             if done and e >= 100 and e % 100 == 0:
                 dateTimeObj = datetime.now()
                 timestampStr = dateTimeObj.strftime("%H:%M:%S")
-                if len(scores) > 100:
-                    last_scores = scores[-100:]
-                else:
-                    last_scores = scores
+                last_scores = episode_scores[-100:]
 
-    #            print('actions: ', [a[0] for a in actions])
                 print("episode: {}/{}, score ave {:.3} range: {:.3}-{:.3}, e: {:.2}, time: {}".format(e, episodes,
                                                                                       np.mean(last_scores),
                                                                                       min(last_scores),
@@ -418,4 +476,4 @@ def train_agent(env, agent, episodes=10, render=True):
                                                                                       agent.epsilon,
                                                                                       timestampStr))
 
-    return scores
+    return episode_scores
