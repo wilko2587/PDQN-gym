@@ -299,12 +299,12 @@ class Agent:
 
         with torch.no_grad():
             #action_params = self.paramNet(states)
-            next_action_param = self.paramNet(next_states)
+            next_action_param = self.param_dupe(next_states)
             next_actor_inputs = torch.cat((next_states, next_action_param), dim=1)
 
             actor_inputs = torch.cat((states, action_params), dim=1)
-            Q = self.actorNet(actor_inputs).detach().cpu()
-            Q_next = self.actorNet(next_actor_inputs).detach().cpu()
+            Q = self.actor_dupe(actor_inputs).detach().cpu()
+            Q_next = self.actor_dupe(next_actor_inputs).detach().cpu()
             Q_target_next = torch.max(Q_next, dim=1)[0]
             not_complete = (1 - dones)
 
@@ -341,12 +341,12 @@ class Agent:
             torch.nn.utils.clip_grad_norm_(self.paramNet.parameters(), self.clipping)
         self.paramNet.optimizer.step()
 
-        #tau = 0.1
-        #tau_param = 0.001
-        #for target_param, param in zip(self.actorNet.parameters(), self.actor_dupe.parameters()):
-        #    target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
-        #for target_param, param in zip(self.paramNet.parameters(), self.param_dupe.parameters()):
-        #    target_param.data.copy_(tau_param * param.data + (1.0 - tau_param) * target_param.data)
+        tau_actor = 0.1
+        tau_param = 0.001
+        for dupe_param, param in zip(self.actor_dupe.parameters(), self.actorNet.parameters()):
+            dupe_param.data.copy_(tau_actor * param.data + (1.0 - tau_actor) * dupe_param.data)
+        for dupe_param, param in zip(self.param_dupe.parameters(), self.paramNet.parameters()):
+            dupe_param.data.copy_(tau_param * param.data + (1.0 - tau_param) * dupe_param.data)
 
 
 def train(env, agent, episodes=10, render=True):
@@ -434,8 +434,8 @@ if __name__ == '__main__':
                   actorNet_kwargs=actorNet_kwargs,
                   paramNet_kwargs=paramNet_kwargs,
                   train_start=500,
-                  epsilon_decay=0.99993,
-                  epsilon_min=0.02,
+                  epsilon_decay=0.999,
+                  epsilon_min=0.01,
                   epsilon_bumps=[],
                   memory_size=5000,
                   batch_size=64,
