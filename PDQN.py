@@ -428,28 +428,40 @@ if __name__ == '__main__':
     actorNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-3}
     paramNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-4}
 
-    agent = Agent(state_size=state_size,
-                  action_size=action_size,
-                  action_param_size=action_param_size,
-                  actorNet_kwargs=actorNet_kwargs,
-                  paramNet_kwargs=paramNet_kwargs,
-                  train_start=500,
-                  epsilon_decay=0.9995,
-                  epsilon_min=0.01,
-                  epsilon_bumps=[],
-                  memory_size=10000,
-                  batch_size=128,
-                  gamma=0.9,
-                  grad_clipping=10.,
-                  stratify_replay_memory=False)
+    results = pd.DataFrame(index=list(range(30000)), columns=['stratified memory', 'unstratified memory'])
+    for stratify in [True, False]:
+        agent = Agent(state_size=state_size,
+                      action_size=action_size,
+                      action_param_size=action_param_size,
+                      actorNet_kwargs=actorNet_kwargs,
+                      paramNet_kwargs=paramNet_kwargs,
+                      train_start=500,
+                      epsilon_decay=0.9995,
+                      epsilon_min=0.01,
+                      epsilon_bumps=[],
+                      memory_size=10000,
+                      batch_size=128,
+                      gamma=0.9,
+                      grad_clipping=10.,
+                      stratify_replay_memory=stratify)
 
-    scores = train(env, agent, episodes=50000, render=False)
+        scores = train(env, agent, episodes=400, render=False)
+        col = {True:"stratified memory", False:"unstratified memory"}[stratify]
+        results.loc[:, col] = scores
+        scores_binned = pd.DataFrame(index=np.floor(np.arange(0, len(scores))/100.)*100, columns=['score'], data=scores)
+        scores_binned = scores_binned.reset_index()
+        scores_binned.rename(columns={'index': 'episode'})
+        sns.pointplot(data=scores_binned, y='score', x='episode', errwidth=0.5, linewidth=0.5)
+        plt.savefig('result{}.png'.format(str(stratify)))
 
+    results.to_csv('results.csv')
+
+    scores_binned = results.copy()
+    scores_binned.index = np.floor(np.arange(0, len(results))/100.)*100
+    scores_binned = scores_binned.reset_index()
+    scores_binned.rename(columns={'index': 'episode'})
+    sns.pointplot(data=scores_binned, y='score', x='episode', errwidth=0.5, linewidth=0.5)
+    plt.savefig('results.png')
     #plt.plot(scores)
     #plt.show()
-    scores_binned = pd.DataFrame(index=np.linspace(100, len(scores), 500), columns=['score'], data=scores)
-    scores_binned = scores_binned.reset_index()
-    scores_binned.rename(columns={'index':'episode'})
-    sns.pointplot(data=scores_binned, y='score', x='episode', errwidth=0.5, linewidth=0.5)
-    plt.savefig('result.png')
-    pd.Series(scores).to_csv('results.csv')
+
