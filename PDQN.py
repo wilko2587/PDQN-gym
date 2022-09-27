@@ -427,7 +427,7 @@ if __name__ == '__main__':
 
     actorNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-3}
     paramNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-4}
-    Nepisodes = 400
+    Nepisodes = 30000
     results = pd.DataFrame(index=list(range(Nepisodes)), columns=['stratified memory', 'unstratified memory'])
     for stratify in [True, False]:
         agent = Agent(state_size=state_size,
@@ -448,7 +448,7 @@ if __name__ == '__main__':
         scores = train(env, agent, episodes=Nepisodes, render=False)
         col = {True:"stratified memory", False:"unstratified memory"}[stratify]
         results.loc[:, col] = scores
-        scores_binned = pd.DataFrame(index=np.floor(np.arange(0, len(scores))/100.)*100, columns=['score'], data=scores)
+        scores_binned = pd.DataFrame(index=np.floor(np.arange(0, len(scores))/500.)*500, columns=['score'], data=scores)
         scores_binned = scores_binned.reset_index()
         scores_binned = scores_binned.rename(columns={'index': 'episode'})
         f = plt.figure()
@@ -458,7 +458,7 @@ if __name__ == '__main__':
     results.to_csv('results.csv')
 
     scores_binned = results.copy()
-    scores_binned.index = np.floor(np.arange(0, len(results))/100.)*100
+    scores_binned.index = np.floor(np.arange(0, len(results))/500.)*500
     scores_binned = scores_binned.reset_index()
     scores_binned = scores_binned.rename(columns={'index': 'episode'})
     print(scores_binned)
