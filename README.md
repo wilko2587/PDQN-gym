@@ -2,8 +2,9 @@
 ### James Wilkinson
 
 We present a PDQN model applied to the platform domain.
+Please install both requirements.txt, and follow the instructions to setup gym-platform below.
 
-the PDQN agent, pytorch infrastructure, and training/playing proceedure is built in PDQN.py.
+The PDQN agent, pytorch infrastructure, and training/playing proceedure is built in PDQN.py.
 
 run_PDQN.py should run out-of-the-box, and begin training the agent.
 
@@ -13,6 +14,9 @@ run_PDQN.py should run out-of-the-box, and begin training the agent.
 - gym 0.10.5
 - pygame 1.9.4
 - numpy
+
+## Setup for pytorch
+Please ensure pytorch is properly installed on the device.
 
 ## Installing gym-platform (for gym-platform)
 
