@@ -348,6 +348,9 @@ class Agent:
         for dupe_param, param in zip(self.param_dupe.parameters(), self.paramNet.parameters()):
             dupe_param.data.copy_(tau_param * param.data + (1.0 - tau_param) * dupe_param.data)
 
+    def save(self, path='.', i=''):
+        torch.save(self.actorNet.state_dict(), os.path.join(path, 'actorNet{}.pt'.format(i)))
+        torch.save(self.paramNet.state_dict(), os.path.join(path, 'paramNet{}.pt'.format(i)))
 
 def train(env, agent, episodes=10, render=True):
     env.seed(1)
@@ -429,7 +432,7 @@ if __name__ == '__main__':
     paramNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-4}
     Nepisodes = 30000
     results = pd.DataFrame(index=list(range(Nepisodes)), columns=['stratified memory', 'unstratified memory'])
-    for stratify in [True, False]:
+    for stratify in [False, True]:
         agent = Agent(state_size=state_size,
                       action_size=action_size,
                       action_param_size=action_param_size,
@@ -454,7 +457,7 @@ if __name__ == '__main__':
         f = plt.figure()
         sns.pointplot(data=scores_binned, y='score', x='episode', errwidth=0.5, linewidth=0.5)
         plt.savefig('result{}.png'.format(str(stratify)))
-
+        agent.save(i=str(stratify))
     results.to_csv('results.csv')
 
     scores_binned = results.copy()
@@ -469,6 +472,7 @@ if __name__ == '__main__':
     f = plt.figure()
     sns.pointplot(data=scores_binned, x='episode', y='score', hue='method', errwidth=0.5, linewidth=0.5)
     plt.savefig('results.png')
+
     #plt.plot(scores)
     #plt.show()
 
