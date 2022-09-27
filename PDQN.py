@@ -427,8 +427,8 @@ if __name__ == '__main__':
 
     actorNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-3}
     paramNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-4}
-
-    results = pd.DataFrame(index=list(range(30000)), columns=['stratified memory', 'unstratified memory'])
+    Nepisodes = 400
+    results = pd.DataFrame(index=list(range(Nepisodes)), columns=['stratified memory', 'unstratified memory'])
     for stratify in [True, False]:
         agent = Agent(state_size=state_size,
                       action_size=action_size,
@@ -445,7 +445,7 @@ if __name__ == '__main__':
                       grad_clipping=10.,
                       stratify_replay_memory=stratify)
 
-        scores = train(env, agent, episodes=400, render=False)
+        scores = train(env, agent, episodes=Nepisodes, render=False)
         col = {True:"stratified memory", False:"unstratified memory"}[stratify]
         results.loc[:, col] = scores
         scores_binned = pd.DataFrame(index=np.floor(np.arange(0, len(scores))/100.)*100, columns=['score'], data=scores)
