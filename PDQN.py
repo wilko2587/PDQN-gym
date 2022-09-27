@@ -461,6 +461,7 @@ if __name__ == '__main__':
     scores_binned.index = np.floor(np.arange(0, len(results))/100.)*100
     scores_binned = scores_binned.reset_index()
     scores_binned = scores_binned.rename(columns={'index': 'episode'})
+    print(scores_binned)
     f = plt.figure()
     sns.pointplot(data=scores_binned, x='episode', errwidth=0.5, linewidth=0.5)
     plt.savefig('results.png')
