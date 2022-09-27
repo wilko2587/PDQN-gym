@@ -266,7 +266,7 @@ class Agent:
             Q = self.actorNet(concat_state)
             action = np.argmax(Q.detach().cpu().numpy())
             ap = float(action_params[action])
-        return action, [ap], action_params
+        return action, [ap], action_params.detach().cpu()
 
     def replay(self):
         if len(self.memory) < self.train_start:
@@ -295,7 +295,7 @@ class Agent:
         rewards = torch.from_numpy(np.array([s[3] for s in minibatch])).to(self.device)
         actions = torch.from_numpy(np.array([s[1] for s in minibatch])).to(self.device)
         # Do we pull action params here and use in place of action_params directly below?
-        action_params = torch.concat([s[2].reshape(-1, self.action_size).detach() for s in minibatch], dim=0)
+        action_params = torch.concat([s[2].reshape(-1, self.action_size) for s in minibatch], dim=0).to(self.device)
 
         with torch.no_grad():
             #action_params = self.paramNet(states)
