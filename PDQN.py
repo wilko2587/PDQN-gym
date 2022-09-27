@@ -342,6 +342,7 @@ class Agent:
             torch.nn.utils.clip_grad_norm_(self.paramNet.parameters(), self.clipping)
         self.paramNet.optimizer.step()
 
+        # implement soft update for training stability
         tau_actor = 0.1
         tau_param = 0.001
         for dupe_param, param in zip(self.actor_dupe.parameters(), self.actorNet.parameters()):
@@ -349,11 +350,12 @@ class Agent:
         for dupe_param, param in zip(self.param_dupe.parameters(), self.paramNet.parameters()):
             dupe_param.data.copy_(tau_param * param.data + (1.0 - tau_param) * dupe_param.data)
 
+
     def save(self, path='.', i=''):
         torch.save(self.actorNet.state_dict(), os.path.join(path, 'actorNet{}.pt'.format(i)))
         torch.save(self.paramNet.state_dict(), os.path.join(path, 'paramNet{}.pt'.format(i)))
 
-def train(env, agent, episodes=10, render=True):
+def train_agent(env, agent, episodes=10, render=True):
     env.seed(1)
     np.random.seed(1)
 
@@ -417,63 +419,3 @@ def train(env, agent, episodes=10, render=True):
                                                                                       timestampStr))
 
     return scores
-
-
-if __name__ == '__main__':
-    env = gym.make("Platform-v0")
-
-    state_size = env.observation_space.spaces[0].shape[0]
-    action_space = env.action_space
-    action_size = action_space.spaces[0].n
-    action_param_sizes = np.array(
-        [action_space.spaces[1].spaces[i].shape[0] for i in range(action_size)])
-    action_param_size = int(action_param_sizes.sum())
-
-    actorNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-3}
-    paramNet_kwargs = {'hidden_layers': (128, ), 'l2': 0, 'lr': 1e-4}
-    Nepisodes = 30000
-    results = pd.DataFrame(index=list(range(Nepisodes)), columns=['stratified memory', 'unstratified memory'])
-    for stratify in [False, True]:
-        agent = Agent(state_size=state_size,
-                      action_size=action_size,
-                      action_param_size=action_param_size,
-                      actorNet_kwargs=actorNet_kwargs,
-                      paramNet_kwargs=paramNet_kwargs,
-                      train_start=500,
-                      epsilon_decay=0.9995,
-                      epsilon_min=0.01,
-                      epsilon_bumps=[],
-                      memory_size=10000,
-                      batch_size=128,
-                      gamma=0.9,
-                      grad_clipping=10.,
-                      stratify_replay_memory=stratify)
-
-        scores = train(env, agent, episodes=Nepisodes, render=False)
-        col = {True:"stratified memory", False:"unstratified memory"}[stratify]
-        results.loc[:, col] = scores
-        scores_binned = pd.DataFrame(index=np.floor(np.arange(0, len(scores))/500.)*500, columns=['score'], data=scores)
-        scores_binned = scores_binned.reset_index()
-        scores_binned = scores_binned.rename(columns={'index': 'episode'})
-        f = plt.figure()
-        sns.pointplot(data=scores_binned, y='score', x='episode', errwidth=0.5, linewidth=0.5)
-        plt.savefig('result{}.png'.format(str(stratify)))
-        agent.save(i=str(stratify))
-    results.to_csv('results.csv')
-
-    scores_binned = results.copy()
-    scores_binned.index = np.floor(np.arange(0, len(results))/500.)*500
-    scores_binned = scores_binned.reset_index()
-    scores_binned = scores_binned.rename(columns={'index': 'episode'})
-    print(scores_binned)
-    scores_binned = scores_binned.melt(id_vars=['episode'])
-    print(scores_binned)
-    scores_binned = scores_binned.rename(columns={'variable':'method', 'value':'score'})
-    print(scores_binned)
-    f = plt.figure()
-    sns.pointplot(data=scores_binned, x='episode', y='score', hue='method', errwidth=0.5, linewidth=0.5)
-    plt.savefig('results.png')
-
-    #plt.plot(scores)
-    #plt.show()
-
