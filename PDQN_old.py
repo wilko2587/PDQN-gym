@@ -50,11 +50,25 @@ def stratify_sample(tab, size=1, strat_cols=(0)):
     return [tab[i] for i in indices]
 
 
+def pad_action(act, act_param):
+    '''
+
+
+    @param act:
+    @param act_param:
+    @return:
+    '''
+    N = len(act_param)
+    params = [np.zeros((N,), dtype=np.float32), np.zeros((N,), dtype=np.float32), np.zeros((N,), dtype=np.float32)]
+    params[act][:] = act_param
+    return (act, params)
+
+
 class Actor(nn.Module):
     def __init__(self, state_size, action_param_size, action_size,
                  hidden_layers=(128,), activation=nn.ReLU,
                  l2=0., lr=1e-3,
-                 dropout=None, random_state=1,
+                 verbose=None, dropout=None, random_state=1,
                  device="CPU",
                  output_layer_init_std=1e-3):
         '''
@@ -66,6 +80,7 @@ class Actor(nn.Module):
         :param l2: float. l2 penalty parameter
         :param lr: float. learning rate
         :param random_state: seed for pytorch
+        :param verbose: None, 'v' or 'vv' determining level of verbosity
         :param dropout: None, or list (same dims as layers) corresponding to dropout factor
             at each layer
         :param device: device for torch to put model on
@@ -83,6 +98,7 @@ class Actor(nn.Module):
         self.hidden_layers = hidden_layers
         self.l2 = l2
         self.lr = lr
+        self.verbose = verbose
         self.dropout = dropout
         self.criterion = nn.MSELoss()
 
@@ -99,6 +115,7 @@ class Actor(nn.Module):
                                          self.hidden_layers[i + 1]).to(device)
             torch.nn.init.kaiming_normal_(layer.weight, nonlinearity=activation)
             sequentials.append(layer)
+
 
         # Build output layer
         sequentials.append(self.activation().to(device))
@@ -131,27 +148,12 @@ class Actor(nn.Module):
 
 
 class ParamNet(nn.Module):
-
     def __init__(self, state_size, action_param_size,
                  hidden_layers=(128,), activation=nn.ReLU,
                  l2=0., lr=1e-4,
-                 dropout=None, random_state=1,
+                 verbose=None, dropout=None, random_state=1,
                  device="CPU",
                  output_layer_init_std=1e-3):
-        """
-
-        @param: state_size: int. number of elements in state vector
-        @param: action_param_size. int. number of elements in the action parameter vector.
-        @param: hidden_layers. tuple. contains integers dictating the number of nodes in the
-            network's hidden layers
-        @param: activation: activation function
-        @param: l2: float. l2 regularisation constant
-        @param: lr: float. learning rate
-        @param: dropout: tuple. contains integers dictating dropout rate for each hidden layer.
-            must be same dimension as hidden_layers.
-        @param: device: torch device to put the model on
-        @param: output_layer_init_std: stdev of initial weights in output layer.
-        """
 
         super(ParamNet, self).__init__()
 
@@ -165,6 +167,7 @@ class ParamNet(nn.Module):
         self.hidden_layers = hidden_layers
         self.l2 = l2
         self.lr = lr
+        self.verbose = verbose
         self.dropout = dropout
 
         # Build input layer
@@ -198,6 +201,20 @@ class ParamNet(nn.Module):
         logits = self.stack(X)
         return logits
 
+    def fit_batch(self, states, action_params, clipping=None):
+        from copy import deepcopy
+
+        delta_a = deepcopy(action_params.grad.data)
+
+        action_params = self(states)
+        out = -torch.mul(delta_a, action_params)
+        self.zero_grad()
+        out.backward(torch.ones(out.shape).to(self.device))
+        if clipping:
+            torch.nn.utils.clip_grad_norm_(self.parameters(), clipping)
+        self.optimizer.step()
+        return
+
 
 class PDQNAgent:
     def __init__(self, observation_space, action_space,
@@ -218,29 +235,6 @@ class PDQNAgent:
                  param_softness=0.01,
                  device="cuda" if torch.cuda.is_available() else "cpu"):
 
-        """
-
-        @param: observation_space: gym environment observation_space object
-        @param: action_sapce: gym environment action_space
-        @param: actorNet_kwargs: initialisation parameters for actor network
-        @param: paramNet_kwargs: initialisation parameters for param network
-        @param: memory_size: size of the agent's replay memory
-        @param: gamma: discount rate applied to future rewards
-        @param: epsilon_start: float. 0->1. Initial value for epsilon in epsilon greedy.
-        @param: epsilon_min: float. Minimum value for epsilon
-        @param: epsilon_bumps: list. When epsilon decays to a value in this list, it is reset
-            to its initial value. The value is then removed from the list.
-        @param: epsilon_decay. Exponential decay rate for epsilon.
-        @param: batch_size: number of items to read from recall memory on each step.
-        @param: train_start: minimum number of samples in memory before training starts
-        @param: action_param_lims. Hard limits on the values allowed for action parameters,
-            If None, defaults to range of -1 -> +1 for all action parameters.
-        @param: grad_clipping: value of which to clip gradients.
-        @param: stratify_replay_memory: If True, bot will use a stratified method to sample the
-            memory to increase the prevailance of rare state/action pairs. This can run slow.
-        @param: actor_softness: softness parameter applied to the actor updates (range 0->1)
-        @param: param_softness: softness parameter applied to param update (range 0->1)
-        """
         self.state_size = observation_space.spaces[0].shape[0]
         self.action_size = action_space.spaces[0].n
         action_param_sizes = np.array(
@@ -374,8 +368,7 @@ class PDQNAgent:
 
         delta_a = deepcopy(action_params.grad.data)
         action_params = self.paramNet(states)
-
-        # redirect gradients towards the nearest param limits
+        # shift gradients in paramNet so parameters are bound by limits
         max_params = torch.from_numpy(self.action_param_lims[:, 1]).to(self.device)
         min_params = torch.from_numpy(self.action_param_lims[:, 0]).to(self.device)
         geq = (delta_a > 0)
@@ -385,11 +378,9 @@ class PDQNAgent:
         out = -torch.mul(delta_a, action_params)
         self.paramNet.zero_grad()
         out.backward(torch.ones(out.shape).to(self.device))
-
-        # clip the gradients
         if self.clipping:
             torch.nn.utils.clip_grad_norm_(self.paramNet.parameters(), self.clipping)
-        self.paramNet.optimizer.step() # perform update on param network
+        self.paramNet.optimizer.step()
 
         # implement soft update for training stability
         for dupe_param, param in zip(self.actor_dupe.parameters(), self.actorNet.parameters()):

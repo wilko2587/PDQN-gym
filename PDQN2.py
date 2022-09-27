@@ -50,28 +50,31 @@ def stratify_sample(tab, size=1, strat_cols=(0)):
     return [tab[i] for i in indices]
 
 
-class Actor(nn.Module):
-    def __init__(self, state_size, action_param_size, action_size,
+class FFnet(nn.Module):
+    def __init__(self, input_size, output_size,
                  hidden_layers=(128,), activation=nn.ReLU,
                  l2=0., lr=1e-3,
                  dropout=None, random_state=1,
                  device="CPU",
-                 output_layer_init_std=1e-3):
+                 output_layer_init_std=1e-3,
+                 output_func=None):
         '''
 
-        :param layers: list of integers representing sizes of hidden layers.
-            ie: [5,4] will give a NN with 2 hidden layers, first hidden layer of 5 nodes,
-            and second hidden layer of 4 nodes
-        :param activationfunc: default tanh. activation function to use throughout the network
-        :param l2: float. l2 penalty parameter
-        :param lr: float. learning rate
-        :param random_state: seed for pytorch
-        :param dropout: None, or list (same dims as layers) corresponding to dropout factor
-            at each layer
-        :param device: device for torch to put model on
+        @param: input_size: int. number of inputs to model.
+        @param: output_size. int. number of output nodes
+        @param: hidden_layers. tuple. contains integers dictating the number of nodes in the
+            network's hidden layers
+        @param: activation: activation function
+        @param: l2: float. l2 regularisation constant
+        @param: lr: float. learning rate
+        @param: dropout: tuple. contains integers dictating dropout rate for each hidden layer.
+            must be same dimension as hidden_layers.
+        @param: device: torch device to put the model on
+        @param: output_layer_init_std: stdev of initial weights in output layer.
+        @param: output_func: function to apply after final layer of network.
         '''
 
-        super(Actor, self).__init__()
+        super(FFnet, self).__init__()
 
         torch.manual_seed(random_state)
 
@@ -88,8 +91,7 @@ class Actor(nn.Module):
 
         # Build input layer
         sequentials = []
-        nInputs = state_size + action_param_size
-        sequentials.append(nn.Linear(nInputs, self.hidden_layers[0]).to(device))
+        sequentials.append(nn.Linear(input_size, self.hidden_layers[0]).to(device))
 
         # Build hidden layers
         for i in range(len(self.hidden_layers) - 1):
@@ -102,9 +104,12 @@ class Actor(nn.Module):
 
         # Build output layer
         sequentials.append(self.activation().to(device))
-        out_layer = nn.Linear(self.hidden_layers[-1], action_size)
+        out_layer = nn.Linear(self.hidden_layers[-1], output_size)
         torch.nn.init.normal_(out_layer.weight, std=output_layer_init_std)
         sequentials.append(out_layer)
+        if output_func == 'tanh':
+            sequentials.append(nn.Tanh().to(device))
+
         self.stack = nn.Sequential(*sequentials).to(device)
         self.device = device
 
@@ -130,75 +135,6 @@ class Actor(nn.Module):
         self.optimizer.step()
 
 
-class ParamNet(nn.Module):
-
-    def __init__(self, state_size, action_param_size,
-                 hidden_layers=(128,), activation=nn.ReLU,
-                 l2=0., lr=1e-4,
-                 dropout=None, random_state=1,
-                 device="CPU",
-                 output_layer_init_std=1e-3):
-        """
-
-        @param: state_size: int. number of elements in state vector
-        @param: action_param_size. int. number of elements in the action parameter vector.
-        @param: hidden_layers. tuple. contains integers dictating the number of nodes in the
-            network's hidden layers
-        @param: activation: activation function
-        @param: l2: float. l2 regularisation constant
-        @param: lr: float. learning rate
-        @param: dropout: tuple. contains integers dictating dropout rate for each hidden layer.
-            must be same dimension as hidden_layers.
-        @param: device: torch device to put the model on
-        @param: output_layer_init_std: stdev of initial weights in output layer.
-        """
-
-        super(ParamNet, self).__init__()
-
-        torch.manual_seed(random_state)
-
-        if dropout is not None:
-            assert isinstance(dropout, list)
-            assert len(dropout) == len(hidden_layers)
-
-        self.activation = activation
-        self.hidden_layers = hidden_layers
-        self.l2 = l2
-        self.lr = lr
-        self.dropout = dropout
-
-        # Build input layer
-        sequentials = []
-        nInputs = state_size
-        sequentials.append(nn.Linear(nInputs, self.hidden_layers[0]).to(device))
-
-        # Build hidden layers
-        for i in range(len(self.hidden_layers) - 1):
-            sequentials.append(self.activation().to(device))
-
-            if self.dropout is not None: sequentials.append(nn.Dropout(self.dropout[i]))
-            layer = nn.Linear(self.hidden_layers[i], self.hidden_layers[i + 1]).to(device)
-            torch.nn.init.kaiming_normal_(layer.weight, nonlinearity=activation)
-            torch.nn.init.zeros_(layer.bias)
-            sequentials.append(layer)
-
-        # Build output layer
-        sequentials.append(self.activation().to(device))
-        out_layer = nn.Linear(self.hidden_layers[-1], action_param_size)
-        torch.nn.init.normal_(out_layer.weight, std=output_layer_init_std)
-        sequentials.append(out_layer)
-        self.stack = nn.Sequential(*sequentials).to(device)
-        self.device = device
-
-        self.optimizer = optim.Adam(self.parameters(),
-                                    lr=lr,
-                                    weight_decay=l2)
-
-    def forward(self, X):
-        logits = self.stack(X)
-        return logits
-
-
 class PDQNAgent:
     def __init__(self, observation_space, action_space,
                  actorNet_kwargs={},
@@ -216,6 +152,7 @@ class PDQNAgent:
                  stratify_replay_memory=True,
                  actor_softness=0.1,
                  param_softness=0.01,
+                 param_gradient_method='unconstrained',
                  device="cuda" if torch.cuda.is_available() else "cpu"):
 
         """
@@ -239,6 +176,7 @@ class PDQNAgent:
         @param: stratify_replay_memory: If True, bot will use a stratified method to sample the
             memory to increase the prevailance of rare state/action pairs. This can run slow.
         @param: actor_softness: softness parameter applied to the actor updates (range 0->1)
+        @param_gradient_method: 'unconstrained' or 'constrained'. If constrained, uses tanh to compress param outputs
         @param: param_softness: softness parameter applied to param update (range 0->1)
         """
         self.state_size = observation_space.spaces[0].shape[0]
@@ -260,22 +198,25 @@ class PDQNAgent:
         self.train_start = train_start
         self.device = device
         self.clipping = grad_clipping
+        self.param_gradient_method = param_gradient_method
         self.stratify_replay_memory = stratify_replay_memory
         if not action_param_lims:
             self.action_param_lims = np.array([(-1, 1) for i in range(self.action_size)])  # default
 
         # format the network params
         actorNet_kwargs['device'] = device  # ensure everything is on same device
-        actorNet_kwargs['action_size'] = self.action_size
-        actorNet_kwargs['action_param_size'] = self.action_param_size
-        actorNet_kwargs['state_size'] = self.state_size
+        actorNet_kwargs['input_size'] = self.state_size + self.action_param_size
+        actorNet_kwargs['output_size'] = self.action_size
         paramNet_kwargs['device'] = device
-        paramNet_kwargs['action_param_size'] = self.action_param_size
-        paramNet_kwargs['state_size'] = self.state_size
-
+        paramNet_kwargs['input_size'] = self.state_size
+        paramNet_kwargs['output_size'] = self.action_param_size
+        if param_gradient_method == 'constrained':
+            paramNet_kwargs['output_func':'tanh']
+        else:
+            paramNet_kwargs['output_func'] = None
         # build networks
-        self.actorNet = Actor(**actorNet_kwargs).double()
-        self.paramNet = ParamNet(**paramNet_kwargs).double()
+        self.actorNet = FFnet(**actorNet_kwargs).double()
+        self.paramNet = FFnet(**paramNet_kwargs).double()
 
         # create duplicates of the models (target models)
         self.actor_dupe = deepcopy(self.actorNet)
@@ -372,19 +313,19 @@ class PDQNAgent:
         self.actorNet.zero_grad()
         Q_loss.backward()
 
-        delta_a = deepcopy(action_params.grad.data)
-        action_params = self.paramNet(states)
-
         # redirect gradients towards the nearest param limits
-        max_params = torch.from_numpy(self.action_param_lims[:, 1]).to(self.device)
-        min_params = torch.from_numpy(self.action_param_lims[:, 0]).to(self.device)
-        geq = (delta_a > 0)
-        delta_a[geq] *= max_params.sub(action_params).div(max_params - min_params)[geq]
-        delta_a[~geq] *= action_params.sub(min_params).div(max_params - min_params)[~geq]
+        if self.param_gradient_method == 'unconstrained':
+            delta_a = deepcopy(action_params.grad.data)
+            action_params = self.paramNet(states)
+            max_params = torch.from_numpy(self.action_param_lims[:, 1]).to(self.device)
+            min_params = torch.from_numpy(self.action_param_lims[:, 0]).to(self.device)
+            geq = (delta_a > 0)
+            delta_a[geq] *= max_params.sub(action_params).div(max_params - min_params)[geq]
+            delta_a[~geq] *= action_params.sub(min_params).div(max_params - min_params)[~geq]
 
-        out = -torch.mul(delta_a, action_params)
-        self.paramNet.zero_grad()
-        out.backward(torch.ones(out.shape).to(self.device))
+            out = -torch.mul(delta_a, action_params)
+            self.paramNet.zero_grad()
+            out.backward(torch.ones(out.shape).to(self.device))
 
         # clip the gradients
         if self.clipping:
