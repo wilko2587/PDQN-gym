@@ -34,7 +34,8 @@ if __name__=='__main__':
 
     agent.save(id=1)
 
-    # bin the episodes into 500 length bins.
+    # ----- Plotting -----
+    # bin the episodes into 500 length bins
     scores_binned = pd.DataFrame(index=np.floor(np.arange(0, len(scores)) / 500.) * 500, columns=['score'], data=scores)
     scores_binned = scores_binned.reset_index()
     scores_binned = scores_binned.rename(columns={'index': 'episode'})
