@@ -295,7 +295,7 @@ class Agent:
         rewards = torch.from_numpy(np.array([s[3] for s in minibatch])).to(self.device)
         actions = torch.from_numpy(np.array([s[1] for s in minibatch])).to(self.device)
         # Do we pull action params here and use in place of action_params directly below?
-        action_params = torch.from_numpy(np.array([s[2].detach().numpy() for s in minibatch])).to(self.device)
+        action_params = torch.concat([s[2].reshape(-1, self.action_size).detach() for s in minibatch], dim=0)
 
         with torch.no_grad():
             #action_params = self.paramNet(states)
@@ -328,8 +328,8 @@ class Agent:
         delta_a = deepcopy(action_params.grad.data)
         action_params = self.paramNet(states)
         # shift gradients in paramNet so parameters are bound by limits
-        max_params = torch.from_numpy(self.action_param_lims[:, 1])
-        min_params = torch.from_numpy(self.action_param_lims[:, 0])
+        max_params = torch.from_numpy(self.action_param_lims[:, 1]).to(self.device)
+        min_params = torch.from_numpy(self.action_param_lims[:, 0]).to(self.device)
         geq = (delta_a > 0)
         delta_a[geq] *= max_params.sub(action_params).div(max_params - min_params)[geq]
         delta_a[~geq] *= action_params.sub(min_params).div(max_params - min_params)[~geq]
@@ -437,13 +437,13 @@ if __name__ == '__main__':
                   epsilon_decay=0.999,
                   epsilon_min=0.01,
                   epsilon_bumps=[],
-                  memory_size=5000,
-                  batch_size=64,
+                  memory_size=10000,
+                  batch_size=128,
                   gamma=0.9,
                   grad_clipping=10.,
-                  stratify_replay_memory=True)
+                  stratify_replay_memory=False)
 
-    scores = train(env, agent, episodes=50000, render=True)
+    scores = train(env, agent, episodes=50000, render=False)
 
     #plt.plot(scores)
     #plt.show()
