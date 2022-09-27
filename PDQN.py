@@ -10,6 +10,7 @@ import gym_platform
 import matplotlib.pyplot as plt
 from copy import deepcopy
 import pandas as pd
+import seaborn as sns
 
 def stratify_sample(tab, size=1, strat_cols=(0)):
 
@@ -210,6 +211,7 @@ class Agent:
                  train_start=500,
                  action_param_lims=None,
                  grad_clipping=10.,
+                 stratify_replay_memory=True,
                  device="cuda" if torch.cuda.is_available() else "cpu"):
 
         self.state_size = state_size
@@ -226,6 +228,7 @@ class Agent:
         self.train_start = train_start
         self.device = device
         self.clipping = grad_clipping
+        self.stratify_replay_memory = stratify_replay_memory
         if not action_param_lims:
             self.action_param_lims = np.array([(-1, 1) for i in range(action_size)])  # default
 
@@ -278,10 +281,12 @@ class Agent:
             self.epsilon *= self.epsilon_decay
 
         # Randomly sample minibatch from the memory
-        #minibatch = random.sample(self.memory, min(len(self.memory), self.batch_size))
-        minibatch = stratify_sample(self.memory,
-                                    size=self.batch_size,
-                                    strat_cols=(0, 1))
+        if self.stratify_replay_memory:
+            minibatch = stratify_sample(self.memory,
+                                        size=self.batch_size,
+                                        strat_cols=(0, 1))
+        else:
+            minibatch = random.sample(self.memory, min(len(self.memory), self.batch_size))
 
         # Train the actor network
         states = torch.from_numpy(np.array([s[0] for s in minibatch])).to(self.device)
@@ -432,12 +437,13 @@ if __name__ == '__main__':
                   epsilon_decay=0.99993,
                   epsilon_min=0.02,
                   epsilon_bumps=[],
-                  memory_size=10000,
-                  batch_size=128,
+                  memory_size=5000,
+                  batch_size=64,
                   gamma=0.9,
-                  grad_clipping=0.1)
+                  grad_clipping=10.,
+                  stratify_replay_memory=True)
 
-    scores = train(env, agent, episodes=50000, render=False)
+    scores = train(env, agent, episodes=50000, render=True)
 
     #plt.plot(scores)
     #plt.show()
