@@ -450,7 +450,7 @@ if __name__ == '__main__':
         results.loc[:, col] = scores
         scores_binned = pd.DataFrame(index=np.floor(np.arange(0, len(scores))/100.)*100, columns=['score'], data=scores)
         scores_binned = scores_binned.reset_index()
-        scores_binned.rename(columns={'index': 'episode'})
+        scores_binned = scores_binned.rename(columns={'index': 'episode'})
         sns.pointplot(data=scores_binned, y='score', x='episode', errwidth=0.5, linewidth=0.5)
         plt.savefig('result{}.png'.format(str(stratify)))
 
