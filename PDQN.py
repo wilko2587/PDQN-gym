@@ -437,8 +437,8 @@ if __name__ == '__main__':
                   epsilon_decay=0.999,
                   epsilon_min=0.01,
                   epsilon_bumps=[],
-                  memory_size=5000,
-                  batch_size=64,
+                  memory_size=10000,
+                  batch_size=128,
                   gamma=0.9,
                   grad_clipping=10.,
                   stratify_replay_memory=True)
