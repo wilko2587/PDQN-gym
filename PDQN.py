@@ -408,7 +408,7 @@ def play(env, agent, episodes=1000, render=True,
 
             state = next_state
             tot_reward += reward
-            if (e % 100 == 0 and render) or (~train and render):
+            if (e % 100 == 0 and render) or (not train and render):
                 env.render()
 
             if done:
