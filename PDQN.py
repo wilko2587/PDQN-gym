@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from copy import deepcopy
 import pandas as pd
 import seaborn as sns
+import os
 
 def stratify_sample(tab, size=1, strat_cols=(0)):
 
