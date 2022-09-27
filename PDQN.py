@@ -9,6 +9,31 @@ import gym
 import gym_platform
 import matplotlib.pyplot as plt
 from copy import deepcopy
+import pandas as pd
+
+def stratify_sample(tab, size=1, strat_cols=(0)):
+
+    # 1) get frequencies of items in the strat columns
+    all = []
+    for col in strat_cols:
+        strat_data = pd.DataFrame([s[col] for s in tab])
+        # need to round continuous numbers to reduce sparsity
+        strat_data = strat_data.round(decimals=3)
+        strat_data = strat_data.astype('str')
+        all = all + [strat_data.loc[:, i] for i in range(strat_data.shape[1])]
+
+    if len(all) > 1:
+        strat_data = pd.concat(all, axis=1)
+        strat_data['comp'] = strat_data.apply(lambda x: ' | '.join(x), axis=1)
+        strat_data = strat_data.loc[:, ['comp']]
+    else:
+        strat_data = all[0]
+        strat_data.columns = ['comp']
+
+    counts = strat_data['comp'].value_counts(normalize=False).reindex(strat_data['comp'])
+    probs_to_sample = (1./counts) / (1./counts).sum()
+    indices = np.random.choice(len(tab), size=size, p=probs_to_sample.to_list())
+    return [tab[i] for i in indices]
 
 
 def pad_action(act, act_param):
@@ -253,7 +278,10 @@ class Agent:
             self.epsilon *= self.epsilon_decay
 
         # Randomly sample minibatch from the memory
-        minibatch = random.sample(self.memory, min(len(self.memory), self.batch_size))
+        #minibatch = random.sample(self.memory, min(len(self.memory), self.batch_size))
+        minibatch = stratify_sample(self.memory,
+                                    size=self.batch_size,
+                                    strat_cols=(0, 1))
 
         # Train the actor network
         states = torch.from_numpy(np.array([s[0] for s in minibatch])).to(self.device)
@@ -361,7 +389,6 @@ def train(env, agent, episodes=10, render=True):
                 score = score #- 1e-2
                 scores.append(score)
 
-
             replay_counter += 1
 
             if done and e >= 100 and e % 100 == 0:
@@ -402,15 +429,15 @@ if __name__ == '__main__':
                   actorNet_kwargs=actorNet_kwargs,
                   paramNet_kwargs=paramNet_kwargs,
                   train_start=500,
-                  epsilon_decay=0.9999,
-                  epsilon_min=0.01,
+                  epsilon_decay=0.99993,
+                  epsilon_min=0.02,
                   epsilon_bumps=[],
                   memory_size=10000,
                   batch_size=128,
                   gamma=0.9,
                   grad_clipping=0.1)
 
-    scores = train(env, agent, episodes=50000, render=True)
+    scores = train(env, agent, episodes=50000, render=False)
 
     #plt.plot(scores)
     #plt.show()
