@@ -303,8 +303,8 @@ class Agent:
             next_actor_inputs = torch.cat((next_states, next_action_param), dim=1)
 
             actor_inputs = torch.cat((states, action_params), dim=1)
-            Q = self.actor_dupe(actor_inputs).detach().cpu()
-            Q_next = self.actor_dupe(next_actor_inputs).detach().cpu()
+            Q = self.actor_dupe(actor_inputs).detach()
+            Q_next = self.actor_dupe(next_actor_inputs).detach()
             Q_target_next = torch.max(Q_next, dim=1)[0]
             not_complete = (1 - dones)
 
