@@ -299,7 +299,7 @@ class Agent:
 
         with torch.no_grad():
             #action_params = self.paramNet(states)
-            next_action_param = self.param_dupe(next_states)
+            next_action_param = self.param_dupe(next_states).detach()
             next_actor_inputs = torch.cat((next_states, next_action_param), dim=1)
 
             actor_inputs = torch.cat((states, action_params), dim=1)
