@@ -2,7 +2,7 @@
 ### James Wilkinson
 
 We present a PDQN model applied to the platform domain.
-Please install both requirements.txt, and follow the instructions to setup gym-platform below.
+Please install both requirements.txt, and follow the instructions to setup gym-platform below. NB: if environment rendering is showing blank, try downgrading to an earlier version of pygame (1.9.4 or 1.9.6).
 
 The PDQN agent, pytorch infrastructure, and training/playing proceedure is built in PDQN.py.
 
@@ -25,8 +25,8 @@ Install this as any other OpenAI gym environment:
     git clone https://github.com/cycraig/gym-platform
     cd gym-platform
     pip install -e '.[gym-platform]'
-    
-or 
+
+or
 
     pip install -e git+https://github.com/cycraig/gym-platform#egg=gym_platform
 
