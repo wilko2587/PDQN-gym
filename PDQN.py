@@ -8,6 +8,10 @@ from datetime import datetime
 from copy import deepcopy
 import pandas as pd
 import os
+from matplotlib import animation
+import matplotlib.pyplot as plt
+
+_cwd = os.getcwd()
 
 ''' # relevant papers
 https://arxiv.org/abs/1905.04388
@@ -347,7 +351,7 @@ class PDQNAgent:
         torch.save(self.actorNet.state_dict(), os.path.join(path, 'actorNet_id{}.pt'.format(id)))
         torch.save(self.paramNet.state_dict(), os.path.join(path, 'paramNet_id{}.pt'.format(id)))
 
-    def load(self, path='./models', id=''):
+    def load(self, path=os.path.join(_cwd, 'models'), id=''):
         '''
 
         @param path: path to load models from
@@ -357,8 +361,8 @@ class PDQNAgent:
         # load the models
         actorNet = os.path.join(path, 'actorNet_id{}.pt'.format(id))
         paramNet = os.path.join(path, 'paramNet_id{}.pt'.format(id))
-        self.actorNet.load_state_dict(torch.load(actorNet))
-        self.paramNet.load_state_dict(torch.load(paramNet))
+        self.actorNet.load_state_dict(torch.load(actorNet, map_location=self.device))
+        self.paramNet.load_state_dict(torch.load(paramNet, map_location=self.device))
 
         # create duplicates of the models (target networks)
         self.actor_dupe = deepcopy(self.actorNet)
@@ -366,7 +370,7 @@ class PDQNAgent:
 
 
 def play(env, agent, episodes=1000, render=True,
-                seed=1, train=True):
+                seed=1, train=True, save_best=True):
     """
 
     @param env: gym environment for agent to use
@@ -375,6 +379,7 @@ def play(env, agent, episodes=1000, render=True,
     @param render: bool. True will render pygame window every 100 episodes.
     @param seed: int. seed for all the non-deterministic modules.
     @param train: bool. If true, agent will train as it plays
+    @param save_best: bool. Not implemented. If true, will save the best episode render in the cwd as a gif
     @return: list. final scores (sum of rewards) received by bot. One element per episode.
     """
 
@@ -389,6 +394,7 @@ def play(env, agent, episodes=1000, render=True,
         state, _ = env.reset()
         done = False
         tot_reward = 0
+        frames = []
         while not done:
 
             action, action_param, all_action_params = agent.act(state)

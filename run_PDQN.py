@@ -22,17 +22,18 @@ if __name__=='__main__':
                           train_start=500,
                           epsilon_decay=0.9995,
                           epsilon_min=0.01,
+                          epsilon_start=0.3,
                           epsilon_bumps=[], # can reset epsilon to init value when it hits values inside this list
                           memory_size=10000,
                           batch_size=128,
                           gamma=0.9,
                           grad_clipping=2.,
-                          stratify_replay_memory=False)
+                          stratify_replay_memory=True)
 
+    agent.load(id=1)
     # train agent, and get scores for each episode
-    scores = play(env, agent, episodes=Nepisodes, render=True, train=True)
-
-    agent.save(id=1)
+    scores = play(env, agent, episodes=Nepisodes, render=True, train=True, save_best=False)
+    agent.save(id=2)
 
     # ----- Plotting -----
     # bin the episodes into 500 length bins
