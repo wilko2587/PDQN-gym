@@ -144,6 +144,7 @@ class PDQNAgent:
                  epsilon_start=1.0,
                  epsilon_min=0.05,
                  epsilon_bumps=[], # when epsilon hits these values, reset to original epsilon
+                 epsilon_grad=0,
                  epsilon_decay=0.999,
                  batch_size=128,
                  train_start=500,
@@ -167,6 +168,8 @@ class PDQNAgent:
         @param: epsilon_min: float. Minimum value for epsilon
         @param: epsilon_bumps: list. When epsilon decays to a value in this list, it is reset
             to its initial value. The value is then removed from the list.
+        @param: epsilon_grad: float. Artificial increase in epsilon for each unit of reward
+            beyond that which the agent has received on average.
         @param: epsilon_decay. Exponential decay rate for epsilon.
         @param: batch_size: number of items to read from recall memory on each step.
         @param: train_start: minimum number of samples in memory before training starts
@@ -194,6 +197,7 @@ class PDQNAgent:
         self.epsilon_decay = epsilon_decay
         self.epsilon_init = float(epsilon_start)
         self.epsilon_bumps = epsilon_bumps
+        self.epsilon_grad = epsilon_grad
         self.batch_size = batch_size
         self.train_start = train_start
         self.device = device
@@ -221,6 +225,8 @@ class PDQNAgent:
         # create duplicates of the models (target models)
         self.actor_dupe = deepcopy(self.actorNet)
         self.param_dupe = deepcopy(self.paramNet)
+        self.streak = 0
+        self.streaks = []
 
     def remember(self, state, action, action_param, reward, next_state, done):
         '''
@@ -229,6 +235,19 @@ class PDQNAgent:
         '''
         self.memory.append((state, action, action_param, reward, next_state, done))
 
+    def reset_streak(self, streak=0):
+        self.streaks.append(self.streak)
+        self.streak = 0
+
+    def _gen_epsilon(self):
+        if self.epsilon <= self.epsilon_min:
+            thresh = np.mean(self.streaks[max(0, len(self.streaks)-100):])
+            epsilon_boost = (self.epsilon_grad * self.streak)*(self.streak > thresh)
+            if self.streak > thresh:
+                print('boosting {:.3f} -> {:.3f} | thresh {:.3f}'.format(self.epsilon, self.epsilon+epsilon_boost, thresh))
+            return self.epsilon + epsilon_boost
+        return self.epsilon
+
     def act(self, state):
         '''
 
@@ -236,7 +255,8 @@ class PDQNAgent:
         @return: action index, action_param value corresponding to action, full action_params from
         paramNet.
         '''
-        if random.uniform(0, 1) < self.epsilon:  # implement epsilon exploration
+        epsilon = self._gen_epsilon()
+        if random.uniform(0, 1) < epsilon:  # implement epsilon exploration
             action = np.random.randint(0, self.action_size)
             action_params = torch.from_numpy(
                 np.array([np.random.uniform(low, high) for low, high in self.action_param_lims]))
@@ -267,6 +287,8 @@ class PDQNAgent:
 
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
+        else:
+            self.epsilon = 0.
 
         # Randomly sample minibatch from the memory
         if self.stratify_replay_memory:
@@ -387,6 +409,7 @@ def play(env, agent, episodes=1000, render=True,
     episode_scores = []
     for e in range(episodes):
         state, _ = env.reset()
+        agent.reset_streak()
         done = False
         tot_reward = 0
         while not done:
@@ -397,6 +420,9 @@ def play(env, agent, episodes=1000, render=True,
             formatted_params[action][:] = action_param
 
             (next_state, _), reward, done, _ = env.step((action, formatted_params))
+
+            if reward != done: # dont increment streak if the action caused the environment to close
+                agent.streak += reward # this way the "average" final streak still has room for one more action
 
             #if done: # make it bad to die
             #    reward = reward - 1e-2
