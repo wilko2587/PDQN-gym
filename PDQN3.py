@@ -155,6 +155,7 @@ class PDQNAgent:
                  actor_softness=0.1,
                  param_softness=0.01,
                  param_gradient_method='unconstrained',
+                 pct_thresh=0.2,
                  device="cuda" if torch.cuda.is_available() else "cpu"):
 
         """
@@ -194,6 +195,7 @@ class PDQNAgent:
         self.param_softness = param_softness
         self.memory = deque(maxlen=memory_size)
         self.gamma = gamma  # discount rate
+        self.pct_thresh = pct_thresh
         self.epsilon = epsilon_start  # exploration rate
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
@@ -238,13 +240,13 @@ class PDQNAgent:
         '''
         self.memory.append((state, action, action_param, reward, next_state, done))
 
-    def reset_streak(self, streak=0):
+    def reset_streak(self):
         self.streaks.append(self.streak)
         self.streak = 0
 
     def _gen_epsilon(self):
-        if self.epsilon <= self.epsilon_min:# and float(self.epsilon_grad) != 0.:
-            thresh = np.mean(self.streaks[max(0, len(self.streaks)-100):])
+        if float(self.epsilon_grad) != 0.:
+            thresh = np.quantile(self.streaks[max(0, len(self.streaks)-100):], self.pct_thresh)
             epsilon_boost = (self.epsilon_grad * self.streak)*(self.streak > thresh)
             return self.epsilon + epsilon_boost
         else:
@@ -417,6 +419,9 @@ def play(env, agent, episodes=1000, render=True,
             formatted_params = all_action_params.numpy().reshape([agent.action_param_size, 1])
 
             (next_state, _), reward, done, _ = env.step((action, formatted_params))
+
+            if reward <= 0.:
+                reward += -1e-3 # small penalty if not moving
 
             if reward != done: # dont increment streak if the action caused the environment to close
                 agent.streak += reward # this way the "average" final streak still has room for one more action
