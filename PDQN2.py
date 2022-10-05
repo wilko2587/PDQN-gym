@@ -243,8 +243,6 @@ class PDQNAgent:
         if self.epsilon <= self.epsilon_min:
             thresh = np.mean(self.streaks[max(0, len(self.streaks)-100):])
             epsilon_boost = (self.epsilon_grad * self.streak)*(self.streak > thresh)
-            if self.streak > thresh:
-                print('boosting {:.3f} -> {:.3f} | thresh {:.3f}'.format(self.epsilon, self.epsilon+epsilon_boost, thresh))
             return self.epsilon + epsilon_boost
         return self.epsilon
 
@@ -258,18 +256,21 @@ class PDQNAgent:
         epsilon = self._gen_epsilon()
         if random.uniform(0, 1) < epsilon:  # implement epsilon exploration
             action = np.random.randint(0, self.action_size)
-            action_params = torch.from_numpy(
-                np.array([np.random.uniform(low, high) for low, high in self.action_param_lims]))
-            low, high = self.action_param_lims[action]
-            ap = np.random.uniform(low, high)
+            state = torch.from_numpy(state).to(self.device)
+            action_params = self.paramNet(state).detach().cpu()
+            #action_params = torch.from_numpy(
+            #    np.array([np.random.uniform(low, high) for low, high in self.action_param_lims]))
+            #low, high = self.action_param_lims[action]
+            ap = float(action_params[action])
+            #action_params = self.paramNet(state)
         else:
             state = torch.from_numpy(state).to(self.device)
-            action_params = self.paramNet(state)
+            action_params = self.paramNet(state).detach().cpu()
             concat_state = torch.cat((state, action_params), dim=0)
             Q = self.actorNet(concat_state)
             action = np.argmax(Q.detach().cpu().numpy())
             ap = float(action_params[action])
-        return action, [ap], action_params.detach().cpu()
+        return action, ap, action_params
 
     def replay(self):
         '''
@@ -287,8 +288,6 @@ class PDQNAgent:
 
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
-        else:
-            self.epsilon = 0.
 
         # Randomly sample minibatch from the memory
         if self.stratify_replay_memory:
@@ -416,8 +415,9 @@ def play(env, agent, episodes=1000, render=True,
 
             action, action_param, all_action_params = agent.act(state)
 
-            formatted_params = [np.zeros((agent.action_param_size,), dtype=np.float32)]*agent.action_size
-            formatted_params[action][:] = action_param
+            formatted_params = np.zeros((agent.action_param_size,), dtype=np.float32)
+            formatted_params[action] = action_param
+            formatted_params = formatted_params.reshape([agent.action_param_size, 1])
 
             (next_state, _), reward, done, _ = env.step((action, formatted_params))
 
