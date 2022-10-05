@@ -99,7 +99,7 @@ class FFnet(nn.Module):
             if self.dropout is not None: sequentials.append(nn.Dropout(self.dropout[i]))
             layer = nn.Linear(self.hidden_layers[i],
                                          self.hidden_layers[i + 1]).to(device)
-            torch.nn.init.kaiming_normal_(layer.weight, nonlinearity=activation)
+            torch.nn.init.kaiming_normal_(layer.weight, nonlinearity="relu")
             sequentials.append(layer)
 
         # Build output layer
@@ -142,10 +142,11 @@ class PDQNAgent:
                  memory_size=10000,
                  gamma=0.9,
                  epsilon_start=1.0,
-                 epsilon_min=0.05,
+                 epsilon_min=0.01,
                  epsilon_bumps=[], # when epsilon hits these values, reset to original epsilon
                  epsilon_grad=0,
                  epsilon_decay=0.999,
+                 noise_level=0.,
                  batch_size=128,
                  train_start=500,
                  action_param_lims=None,
@@ -176,6 +177,7 @@ class PDQNAgent:
         @param: action_param_lims. Hard limits on the values allowed for action parameters,
             If None, defaults to range of -1 -> +1 for all action parameters.
         @param: grad_clipping: value of which to clip gradients.
+        @param: noise_level: decimal std of noise to apply to param net exploration
         @param: stratify_replay_memory: If True, bot will use a stratified method to sample the
             memory to increase the prevailance of rare state/action pairs. This can run slow.
         @param: actor_softness: softness parameter applied to the actor updates (range 0->1)
@@ -200,6 +202,7 @@ class PDQNAgent:
         self.epsilon_grad = epsilon_grad
         self.batch_size = batch_size
         self.train_start = train_start
+        self.noise_level = noise_level
         self.device = device
         self.clipping = grad_clipping
         self.param_gradient_method = param_gradient_method
@@ -258,6 +261,13 @@ class PDQNAgent:
             action = np.random.randint(0, self.action_size)
             state = torch.from_numpy(state).to(self.device)
             action_params = self.paramNet(state).detach().cpu()
+            action_param_noise = np.array(
+                [np.random.uniform(low*self.noise_level/2,
+                                     high*self.noise_level/2) for low, high in self.action_param_lims]
+            )
+            action_params += action_param_noise
+            action_params[action_params>1.0] = 1.0
+            action_params[action_params<-1.0] = -1.0
             #action_params = torch.from_numpy(
             #    np.array([np.random.uniform(low, high) for low, high in self.action_param_lims]))
             #low, high = self.action_param_lims[action]

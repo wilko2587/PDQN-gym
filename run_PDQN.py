@@ -10,8 +10,8 @@ if __name__=='__main__':
     env = gym.make("Platform-v0")
 
     # Network/setup params
-    actorNet_kwargs = {'hidden_layers': (128,), 'l2': 0, 'lr': 1e-3}
-    paramNet_kwargs = {'hidden_layers': (128,), 'l2': 0, 'lr': 1e-4}
+    actorNet_kwargs = {'hidden_layers': (256, 256, 128), 'l2': 0, 'lr': 1e-3}
+    paramNet_kwargs = {'hidden_layers': (256, 256, 128), 'l2': 0, 'lr': 1e-4}
     Nepisodes = 20000
 
     # initialise PDQN agent
@@ -21,16 +21,17 @@ if __name__=='__main__':
                           paramNet_kwargs=paramNet_kwargs,
                           train_start=500,
                           epsilon_decay=0.999,
-                          epsilon_min=0.001,
+                          epsilon_min=0.01,
                           epsilon_bumps=[], # can reset epsilon to init value when it hits values inside this list
-                          epsilon_grad=2.0,
+                          epsilon_grad=0,#2.0,
                           memory_size=10000,
                           batch_size=128,
+                          noise_level=0.1,
                           gamma=0.9,
                           grad_clipping=10.,
                           stratify_replay_memory=False)
 
-    agent.load(id=1)
+    #agent.load(id=1)
     # train agent, and get scores for each episode
     scores = play(env, agent, episodes=Nepisodes, render=False, train=True)
 
