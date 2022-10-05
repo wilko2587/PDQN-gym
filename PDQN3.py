@@ -243,11 +243,12 @@ class PDQNAgent:
         self.streak = 0
 
     def _gen_epsilon(self):
-        if self.epsilon <= self.epsilon_min:
+        if self.epsilon <= self.epsilon_min:# and float(self.epsilon_grad) != 0.:
             thresh = np.mean(self.streaks[max(0, len(self.streaks)-100):])
             epsilon_boost = (self.epsilon_grad * self.streak)*(self.streak > thresh)
             return self.epsilon + epsilon_boost
-        return self.epsilon
+        else:
+            return self.epsilon
 
     def act(self, state):
         '''
@@ -256,29 +257,28 @@ class PDQNAgent:
         @return: action index, action_param value corresponding to action, full action_params from
         paramNet.
         '''
-        epsilon = self._gen_epsilon()
-        if random.uniform(0, 1) < epsilon:  # implement epsilon exploration
-            action = np.random.randint(0, self.action_size)
-            state = torch.from_numpy(state).to(self.device)
-            action_params = self.paramNet(state).detach().cpu()
-            action_params = nn.functional.tanh(action_params)
-            action_param_noise = np.array(
-                [np.random.uniform(low*self.noise_level/2,
-                                     high*self.noise_level/2) for low, high in self.action_param_lims]
-            )
-            action_params += action_param_noise
-            action_params[action_params>1.0] = 1.0
-            action_params[action_params<-1.0] = -1.0
-            ap = float(action_params[action])
-        else:
-            state = torch.from_numpy(state).to(self.device)
-            action_params = self.paramNet(state).detach().cpu()
-            action_params = nn.functional.tanh(action_params)
-            concat_state = torch.cat((state, action_params), dim=0)
-            Q = self.actorNet(concat_state)
-            action = np.argmax(Q.detach().cpu().numpy())
-            ap = float(action_params[action])
-        return action, ap, action_params
+        with torch.no_grad():
+            epsilon = self._gen_epsilon()
+            if random.uniform(0, 1) < epsilon:  # implement epsilon exploration
+                action = np.random.randint(0, self.action_size)
+                state = torch.from_numpy(state).to(self.device)
+                action_params = self.paramNet(state).detach().cpu()
+                action_param_noise = np.array(
+                    [np.random.uniform(low*self.noise_level/2,
+                                         high*self.noise_level/2) for low, high in self.action_param_lims]
+                )
+                action_params += action_param_noise
+                action_params = torch.tanh(action_params)
+                ap = float(action_params[action])
+            else:
+                state = torch.from_numpy(state).to(self.device)
+                action_params = self.paramNet(state).detach().cpu()
+                action_params = torch.tanh(action_params)
+                concat_state = torch.cat((state, action_params), dim=0)
+                Q = self.actorNet(concat_state)
+                action = np.argmax(Q.detach().cpu().numpy())
+                ap = float(action_params[action])
+            return action, ap, action_params
 
     def replay(self):
         '''
@@ -316,6 +316,7 @@ class PDQNAgent:
 
         with torch.no_grad():
             next_action_param = self.param_dupe(next_states).detach()
+            next_action_param = torch.tanh(next_action_param)
             next_actor_inputs = torch.cat((next_states, next_action_param), dim=1)
 
             actor_inputs = torch.cat((states, action_params), dim=1)
