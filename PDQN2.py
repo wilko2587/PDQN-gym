@@ -415,9 +415,10 @@ def play(env, agent, episodes=1000, render=True,
 
             action, action_param, all_action_params = agent.act(state)
 
-            formatted_params = np.zeros((agent.action_param_size,), dtype=np.float32)
-            formatted_params[action] = action_param
-            formatted_params = formatted_params.reshape([agent.action_param_size, 1])
+            #formatted_params = np.zeros((agent.action_param_size,), dtype=np.float32)
+            #formatted_params[action] = action_param
+            #formatted_params = formatted_params.reshape([agent.action_param_size, 1])
+            formatted_params = all_action_params.numpy().reshape([agent.action_param_size, 1])
 
             (next_state, _), reward, done, _ = env.step((action, formatted_params))
 

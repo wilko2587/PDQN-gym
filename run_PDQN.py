@@ -20,10 +20,10 @@ if __name__=='__main__':
                           actorNet_kwargs=actorNet_kwargs,
                           paramNet_kwargs=paramNet_kwargs,
                           train_start=500,
-                          epsilon_decay=0.9995,
-                          epsilon_min=0.01,
+                          epsilon_decay=0.999,
+                          epsilon_min=0.001,
                           epsilon_bumps=[], # can reset epsilon to init value when it hits values inside this list
-                          epsilon_grad=0,#2.0,
+                          epsilon_grad=2.0,
                           memory_size=10000,
                           batch_size=128,
                           gamma=0.9,
