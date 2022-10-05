@@ -20,19 +20,18 @@ if __name__=='__main__':
                           actorNet_kwargs=actorNet_kwargs,
                           paramNet_kwargs=paramNet_kwargs,
                           train_start=500,
-                          epsilon_decay=0.999,
-                          epsilon_min=0.005,
+                          epsilon_decay=0.997,
+                          epsilon_min=0.004,
                           epsilon_bumps=[], # can reset epsilon to init value when it hits values inside this list
-                          epsilon_grad=0.5,#1,
-                          memory_size=5000,
+                          epsilon_grad=0.25,
+                          memory_size=10000,
                           batch_size=128,
-                          noise_level=0.1,
-                          pct_thresh=0.1,
+                          pct_thresh=0.5,
                           gamma=0.9,
                           grad_clipping=10.,
                           actor_softness=0.1,
                           param_softness=0.001,
-                          stratify_replay_memory = True)
+                          stratify_replay_memory=False)
 
     #agent.load(id=1)
     # train agent, and get scores for each episode
