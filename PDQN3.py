@@ -56,7 +56,7 @@ class FFnet(nn.Module):
                  l2=0., lr=1e-3,
                  dropout=None, random_state=1,
                  device="CPU",
-                 output_layer_init_std=1e-3,
+                 output_layer_init_std=1e-2,
                  output_func=None):
         '''
 
@@ -99,13 +99,13 @@ class FFnet(nn.Module):
             if self.dropout is not None: sequentials.append(nn.Dropout(self.dropout[i]))
             layer = nn.Linear(self.hidden_layers[i],
                                          self.hidden_layers[i + 1]).to(device)
-            torch.nn.init.kaiming_normal_(layer.weight, nonlinearity="relu")
+            #torch.nn.init.kaiming_normal_(layer.weight, nonlinearity="relu")
             sequentials.append(layer)
 
         # Build output layer
         sequentials.append(self.activation().to(device))
         out_layer = nn.Linear(self.hidden_layers[-1], output_size)
-        torch.nn.init.normal_(out_layer.weight, std=output_layer_init_std)
+        #torch.nn.init.normal_(out_layer.weight, std=output_layer_init_std)
         sequentials.append(out_layer)
         if output_func == 'tanh':
             sequentials.append(nn.Tanh().to(device))
@@ -265,17 +265,17 @@ class PDQNAgent:
                 action = np.random.randint(0, self.action_size)
                 state = torch.from_numpy(state).to(self.device)
                 action_params = self.paramNet(state).detach().cpu()
-                action_param_noise = np.array(
-                    [np.random.uniform(low*self.noise_level/2,
-                                         high*self.noise_level/2) for low, high in self.action_param_lims]
-                )
-                action_params += action_param_noise
-                action_params = torch.tanh(action_params)
+                #action_param_noise = np.array(
+                #    [np.random.uniform(low*self.noise_level/2,
+                #                         high*self.noise_level/2) for low, high in self.action_param_lims]
+                #)
+                #action_params += action_param_noise
+                #action_params = torch.tanh(action_params)
                 ap = float(action_params[action])
             else:
                 state = torch.from_numpy(state).to(self.device)
                 action_params = self.paramNet(state).detach().cpu()
-                action_params = torch.tanh(action_params)
+                #action_params = torch.tanh(action_params)
                 concat_state = torch.cat((state, action_params), dim=0)
                 Q = self.actorNet(concat_state)
                 action = np.argmax(Q.detach().cpu().numpy())
@@ -318,7 +318,7 @@ class PDQNAgent:
 
         with torch.no_grad():
             next_action_param = self.param_dupe(next_states).detach()
-            next_action_param = torch.tanh(next_action_param)
+            #next_action_param = torch.tanh(next_action_param)
             next_actor_inputs = torch.cat((next_states, next_action_param), dim=1)
 
             actor_inputs = torch.cat((states, action_params), dim=1)
@@ -337,7 +337,7 @@ class PDQNAgent:
 
         # Secondly, train the paramNet
         action_params = self.paramNet(states)
-        action_params = torch.tanh(action_params)
+        #action_params = torch.tanh(action_params)
         actor_inputs = torch.cat((states, action_params), dim=1)
         Qs = self.actorNet(actor_inputs)
         Q_loss = -torch.mean(torch.sum(Qs, 1)) # Goal is to maximise Q
