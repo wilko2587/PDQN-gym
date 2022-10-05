@@ -1,4 +1,4 @@
-from PDQN2 import PDQNAgent, play
+from PDQN3 import PDQNAgent, play
 import gym
 import gym_platform
 import numpy as np
@@ -10,8 +10,8 @@ if __name__=='__main__':
     env = gym.make("Platform-v0")
 
     # Network/setup params
-    actorNet_kwargs = {'hidden_layers': (256, 256, 128), 'l2': 0, 'lr': 1e-3}
-    paramNet_kwargs = {'hidden_layers': (256, 256, 128), 'l2': 0, 'lr': 1e-4}
+    actorNet_kwargs = {'hidden_layers': (256, 256), 'l2': 1e-6, 'lr': 1e-3}
+    paramNet_kwargs = {'hidden_layers': (256, 256), 'l2': 1e-6, 'lr': 1e-4}
     Nepisodes = 20000
 
     # initialise PDQN agent
@@ -23,13 +23,15 @@ if __name__=='__main__':
                           epsilon_decay=0.999,
                           epsilon_min=0.01,
                           epsilon_bumps=[], # can reset epsilon to init value when it hits values inside this list
-                          epsilon_grad=0,#2.0,
+                          epsilon_grad=0,#0.5,
                           memory_size=10000,
                           batch_size=128,
-                          noise_level=0.1,
+                          noise_level=0,#0.1,
                           gamma=0.9,
                           grad_clipping=10.,
-                          stratify_replay_memory=False)
+                          actor_softness=0.1,
+                          param_softness=0.001,
+                          stratify_replay_memory = False)
 
     #agent.load(id=1)
     # train agent, and get scores for each episode
