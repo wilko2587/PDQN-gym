@@ -154,7 +154,7 @@ class PDQNAgent:
                  stratify_replay_memory=True,
                  actor_softness=0.1,
                  param_softness=0.01,
-                 param_gradient_method='unconstrained',
+                 param_gradient_method='constrained',
                  pct_thresh=0.2,
                  device="cuda" if torch.cuda.is_available() else "cpu"):
 
@@ -220,7 +220,7 @@ class PDQNAgent:
         paramNet_kwargs['input_size'] = self.state_size
         paramNet_kwargs['output_size'] = self.action_param_size
         if param_gradient_method == 'constrained':
-            paramNet_kwargs['output_func':'tanh']
+            paramNet_kwargs['output_func'] = 'tanh'
         else:
             paramNet_kwargs['output_func'] = None
         # build networks
@@ -404,11 +404,14 @@ def play(env, agent, episodes=1000, render=True,
     torch.manual_seed(seed)
 
     episode_scores = []
+    nactions = []
     for e in range(episodes):
         state, _ = env.reset()
         agent.reset_streak()
         done = False
         tot_reward = 0
+
+        counter = 0
         while not done:
 
             action, action_param, all_action_params = agent.act(state)
@@ -419,9 +422,9 @@ def play(env, agent, episodes=1000, render=True,
             formatted_params = all_action_params.numpy().reshape([agent.action_param_size, 1])
 
             (next_state, _), reward, done, _ = env.step((action, formatted_params))
-
+            counter += 1
             if reward <= 0.:
-                reward += -1e-3 # small penalty if not moving
+                reward += -1e-2 # small penalty if not moving
 
             if reward != done: # dont increment streak if the action caused the environment to close
                 agent.streak += reward # this way the "average" final streak still has room for one more action
@@ -441,16 +444,26 @@ def play(env, agent, episodes=1000, render=True,
 
             if done:
                 episode_scores.append(tot_reward)
+                nactions.append(counter)
 
             if done and e >= 100 and e % 100 == 0:
                 dateTimeObj = datetime.now()
                 timestampStr = dateTimeObj.strftime("%H:%M:%S")
                 last_scores = episode_scores[-100:]
+                mean_actions = np.mean(nactions)
+                med_actions = np.median(nactions)
+                highest = max(nactions)
+                lowest = min(nactions)
+                nactions = [] # empty list
 
-                print("episode: {}/{}, score ave {:.3} range: {:.3}-{:.3}, e: {:.2}, time: {}".format(e, episodes,
+                print("episode: {}/{}, score ave {:.3} range: {:.3}-{:.3}, nactions (mean, med, high, low): {}, {}, {}, {}, e: {:.2}, time: {}".format(e, episodes,
                                                                                       np.mean(last_scores),
                                                                                       min(last_scores),
                                                                                       max(last_scores),
+                                                                                      mean_actions,
+                                                                                      med_actions,
+                                                                                      highest,
+                                                                                      lowest,
                                                                                       agent.epsilon,
                                                                                       timestampStr))
 
